@@ -1,0 +1,9 @@
+work/
+output/
+tools/AssetRipper/
+__pycache__/
+*.pyc
+unity-template/Library/
+unity-template/Temp/
+unity-template/Logs/
+unity-template/obj/
