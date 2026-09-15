@@ -4,13 +4,13 @@
   "assetRipper": "./tools/AssetRipper/AssetRipper.GUI.Free.exe",
   "assetRipperArgs": [],
   "python": "python",
-  "inputDir": "./input",
+  "inputDir": "E:/Work/PVZRH/CustomizeLib/BepInEx",
   "workDir": "./work",
   "outputDir": "./output/android",
   "unityTemplateDir": "./unity-template",
   "androidTexture": "ASTC",
-  "astcBlockSize": "12x12",
-  "maxTextureSize": 2048,
+  "astcBlockSize": "6x6",
+  "maxTextureSize": 0,
   "compression": "lzma",
   "unityProjectMode": "ripped"
 }

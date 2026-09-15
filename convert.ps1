@@ -264,6 +264,59 @@ function Invoke-BuildStage {
     if ($nonEmpty.Count -eq 0) {
         Write-Warning "Output directory has no files: $OutputDir"
     }
+
+    Invoke-RelocateAndroidOutput -MappingPath $MappingPath -OutputDir $OutputDir
+}
+
+function Invoke-RelocateAndroidOutput {
+    param(
+        [Parameter(Mandatory = $true)][string]$MappingPath,
+        [Parameter(Mandatory = $true)][string]$OutputDir
+    )
+    if (-not (Test-Path -LiteralPath $MappingPath)) {
+        Write-Warning "mapping.json not found at '$MappingPath'; skipping output relocation."
+        return
+    }
+    $mapping = Get-Content -LiteralPath $MappingPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $inputRoot = [string]$mapping.inputDir
+    $bundles = $mapping.bundles
+    if ($null -eq $bundles) {
+        Write-Warning "mapping.json has no bundles; skipping output relocation."
+        return
+    }
+    if ([string]::IsNullOrEmpty($inputRoot)) {
+        Write-Warning "mapping.json has no inputDir; cannot place results next to sources."
+        return
+    }
+    $moved = 0
+    foreach ($prop in $bundles.PSObject.Properties) {
+        $key = [string]$prop.Name
+        $bundle = $prop.Value
+        $rel = [string]$bundle.file
+        if ([string]::IsNullOrEmpty($rel)) {
+            Write-Warning "Bundle '$key' has no file path in mapping; skipping."
+            continue
+        }
+        $relWin = $rel -replace '/', '\'
+        $dest = (Join-Path $inputRoot $relWin) + ".android"
+        $destDir = Split-Path -Parent $dest
+        if ($destDir -and -not (Test-Path -LiteralPath $destDir)) {
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        }
+        $src = Join-Path $OutputDir $key
+        if (Test-Path -LiteralPath $src) {
+            Move-Item -LiteralPath $src -Destination $dest -Force
+            $moved++
+            $srcManifest = "$src.manifest"
+            $destManifest = "$dest.manifest"
+            if (Test-Path -LiteralPath $srcManifest) {
+                Move-Item -LiteralPath $srcManifest -Destination $destManifest -Force
+            }
+        } else {
+            Write-Warning "Built bundle not found at '$src' for mapping entry '$key'."
+        }
+    }
+    Write-Host "Placed $moved Android bundles next to their sources (suffix .android)"
 }
 
 try {

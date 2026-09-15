@@ -22,7 +22,7 @@ ConversionCulib/
   convert.ps1              一键入口
   config.json              路径和压缩参数
   input/                   放入 PC AssetBundle（可带 .manifest）
-  output/android/          输出的 Android AssetBundle
+  output/android/          Unity 打包的临时输出（最终结果会放回原 AB 旁边，文件名加 .android 后缀）
   scripts/                 inventory / rip / import
   tools/AssetRipper/       放置 AssetRipper.GUI.Free.exe
   unity-template/          Editor 打包脚本模板
@@ -49,7 +49,7 @@ pip install textual
 python scripts/config_tui.py
 ```
 
-快捷键：`Ctrl+S` 保存，`Ctrl+R` 重载，`Esc` 退出。也可直接改 `config.json`。
+`input` 字段右侧有「浏览…」按钮，可浏览文件夹树直接选择要扫描的目录（顶部「起始位置」可切盘符/常用根目录，「上级目录」回上一级）。快捷键：`Ctrl+S` 保存，`Ctrl+R` 重载，`Esc` 退出。也可直接改 `config.json`。
 
 4. 一键转换：
 
@@ -79,7 +79,7 @@ python scripts/config_tui.py
 | `inventory` | 扫描 `input/`，写出 `work/inventory/mapping.json`（包名、资源、依赖、Unity 版本） |
 | `rip` | 启动 AssetRipper 无界面 Web API，`LoadFolder` + `Export/UnityProject`，结果在 `work/ripped/` |
 | `import` | 把还原工程灌进 `work/unity-project`，写入 Editor 脚本和分包名 |
-| `build` | Unity `-batchmode` 打 Android AB 到 `output/android/` |
+| `build` | Unity `-batchmode` 打 Android AB 到 `output/android/`（临时），再按 mapping 记录的来源路径，把结果放回原 AB 所在目录，文件名加 `.android` 后缀 |
 
 当前 AssetRipper **没有** CLI `export` 子命令。`rip` 使用：
 
