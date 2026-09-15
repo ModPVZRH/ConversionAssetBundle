@@ -116,6 +116,9 @@ public static class AbRebuild
                 continue;
             }
 
+            if (string.Equals(item.type, "MonoScript", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             mappingAssetCount++;
             string resolved = ResolveAssetPath(item, index);
             if (string.IsNullOrEmpty(resolved) || IsForbiddenPath(resolved))
@@ -148,6 +151,9 @@ public static class AbRebuild
             assigned++;
         }
 
+        IncludeDependencies(assignedPaths);
+        AttachSpineFamily(assignedPaths, index);
+        assigned = assignedPaths.Count;
         AssetDatabase.RemoveUnusedAssetBundleNames();
         Debug.Log("AbRebuild: assigned " + assigned + "/" + mappingAssetCount + " mapped assets");
         return new AssignResult
@@ -326,7 +332,7 @@ public static class AbRebuild
             case "Font":
                 return new[] { ".ttf", ".otf", ".fontsettings" };
             case "TextAsset":
-                return new[] { ".txt", ".bytes", ".json", ".xml", ".csv" };
+                return new[] { ".txt", ".bytes", ".json", ".xml", ".csv", ".atlas", ".skel" };
             case "Mesh":
                 return new[] { ".fbx", ".obj", ".mesh", ".dae" };
             case "Scene":
@@ -506,6 +512,139 @@ public static class AbRebuild
             Debug.LogWarning("AbRebuild: wrote " + wrapper.items.Length + " missing assets to " + path);
     }
 
+    static void AssignPathToBundle(string assetPath, string bundle, Dictionary<string, string> assignedPaths)
+    {
+        if (string.IsNullOrEmpty(assetPath) || string.IsNullOrEmpty(bundle))
+            return;
+        if (IsForbiddenPath(assetPath) || AssetDatabase.IsValidFolder(assetPath))
+            return;
+        if (assetPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase)
+            || assetPath.StartsWith("Resources/", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        AssetImporter importer = AssetImporter.GetAtPath(assetPath);
+        if (importer == null)
+            return;
+
+        string previous;
+        if (assignedPaths.TryGetValue(assetPath, out previous) && previous == bundle)
+            return;
+
+        importer.assetBundleName = bundle;
+        assignedPaths[assetPath] = bundle;
+    }
+
+    static void IncludeDependencies(Dictionary<string, string> assignedPaths)
+    {
+        var snapshot = assignedPaths.ToList();
+        for (int i = 0; i < snapshot.Count; i++)
+        {
+            string root = snapshot[i].Key;
+            string bundle = snapshot[i].Value;
+            string[] deps = AssetDatabase.GetDependencies(root, true);
+            for (int d = 0; d < deps.Length; d++)
+                AssignPathToBundle(deps[d], bundle, assignedPaths);
+        }
+    }
+
+    static string SpineStem(string assetPath)
+    {
+        string file = Path.GetFileName(assetPath ?? "");
+        if (file.EndsWith(".atlas.txt", StringComparison.OrdinalIgnoreCase))
+            return file.Substring(0, file.Length - ".atlas.txt".Length);
+        if (file.EndsWith(".skel.bytes", StringComparison.OrdinalIgnoreCase))
+            return file.Substring(0, file.Length - ".skel.bytes".Length);
+
+        string stem = Path.GetFileNameWithoutExtension(file);
+        string[] suffixes = { "_SkeletonData", "_Atlas", "_Material", "_Controller" };
+        for (int i = 0; i < suffixes.Length; i++)
+        {
+            if (stem.EndsWith(suffixes[i], StringComparison.OrdinalIgnoreCase))
+                return stem.Substring(0, stem.Length - suffixes[i].Length);
+        }
+
+        if (stem.EndsWith(".atlas", StringComparison.OrdinalIgnoreCase))
+            return stem.Substring(0, stem.Length - ".atlas".Length);
+        if (stem.EndsWith(".skel", StringComparison.OrdinalIgnoreCase))
+            return stem.Substring(0, stem.Length - ".skel".Length);
+        return stem;
+    }
+
+    static bool LooksLikeSpineAsset(string assetPath)
+    {
+        string file = Path.GetFileName(assetPath ?? "");
+        string lower = file.ToLowerInvariant();
+        if (lower.EndsWith(".atlas.txt") || lower.EndsWith(".atlas") || lower.EndsWith(".skel") || lower.EndsWith(".skel.bytes"))
+            return true;
+        string stem = Path.GetFileNameWithoutExtension(file);
+        return stem.EndsWith("_SkeletonData", StringComparison.OrdinalIgnoreCase)
+            || stem.EndsWith("_Atlas", StringComparison.OrdinalIgnoreCase)
+            || lower.Contains("spine");
+    }
+
+    static void AttachSpineFamily(Dictionary<string, string> assignedPaths, AssetIndex index)
+    {
+        var stemToBundle = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in assignedPaths)
+        {
+            if (!LooksLikeSpineAsset(kv.Key) && !kv.Key.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase)
+                && !kv.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                && !kv.Key.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                continue;
+            string stem = SpineStem(kv.Key);
+            if (!string.IsNullOrEmpty(stem) && !stemToBundle.ContainsKey(stem))
+                stemToBundle[stem] = kv.Value;
+        }
+
+        if (stemToBundle.Count == 0)
+            return;
+
+        for (int i = 0; i < index.paths.Count; i++)
+        {
+            string path = index.paths[i];
+            string stem = SpineStem(path);
+            string bundle;
+            if (string.IsNullOrEmpty(stem) || !stemToBundle.TryGetValue(stem, out bundle))
+                continue;
+            if (LooksLikeSpineAsset(path)
+                || Path.GetFileNameWithoutExtension(path).StartsWith(stem, StringComparison.OrdinalIgnoreCase))
+            {
+                AssignPathToBundle(path, bundle, assignedPaths);
+            }
+        }
+    }
+
+    static bool IsSpineAtlasTexture(string assetPath)
+    {
+        string file = Path.GetFileNameWithoutExtension(assetPath ?? "");
+        string[] paths = AssetDatabase.GetAllAssetPaths();
+        for (int i = 0; i < paths.Length; i++)
+        {
+            string other = paths[i];
+            string name = Path.GetFileName(other);
+            if (!name.EndsWith(".atlas.txt", StringComparison.OrdinalIgnoreCase)
+                && !name.EndsWith(".atlas", StringComparison.OrdinalIgnoreCase)
+                && !name.EndsWith("_Atlas.asset", StringComparison.OrdinalIgnoreCase))
+                continue;
+            string stem = SpineStem(other);
+            if (file.Equals(stem, StringComparison.OrdinalIgnoreCase)
+                || file.StartsWith(stem + "_", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    static void ApplySpineTextureImporter(TextureImporter tex)
+    {
+        tex.textureType = TextureImporterType.Default;
+        tex.alphaIsTransparency = false;
+        tex.mipmapEnabled = false;
+        tex.npotScale = TextureImporterNPOTScale.None;
+        tex.wrapMode = TextureWrapMode.Clamp;
+        tex.sRGBTexture = true;
+    }
+
     static void ApplyAndroidTexture(string value)
     {
         if (string.IsNullOrEmpty(value))
@@ -551,11 +690,15 @@ public static class AbRebuild
                 TextureImporter tex = importer as TextureImporter;
                 if (tex != null)
                 {
+                    bool spineTex = IsSpineAtlasTexture(path);
+                    if (spineTex)
+                        ApplySpineTextureImporter(tex);
+
                     TextureImporterPlatformSettings plat = tex.GetPlatformTextureSettings("Android");
                     plat.overridden = true;
                     plat.format = format;
-                    plat.compressionQuality = 50;
-                    if (maxSize > 0)
+                    plat.compressionQuality = spineTex ? 100 : 50;
+                    if (maxSize > 0 && !spineTex)
                     {
                         int current = plat.maxTextureSize > 0 ? plat.maxTextureSize : tex.maxTextureSize;
                         plat.maxTextureSize = current > 0 ? Math.Min(current, maxSize) : maxSize;

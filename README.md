@@ -136,6 +136,9 @@ python scripts/config_tui.py
 **Android 包比 PC 包还大**  
 PC 贴图多为 DXT，默认 ASTC 4x4/6x6 可能更大。提高 `astcBlockSize` 或降低 `maxTextureSize`。
 
+**Spine 预制件动画不播 / 透明变黑**  
+AssetRipper 会把 Spine 脚本和 `Spine/Skeleton` 导出成空壳，引用丢失，透明通道也会按不透明 Shader 画成黑色。import 阶段会盖上带序列化字段的脚本桩和 PMA Shader；打包时 Spine 图集关闭 `Alpha Is Transparency`。改完后重新 `.\convert.ps1 -Stage import` 再 `-Stage build`。运行时仍需要游戏里的官方 spine-unity，桩脚本只为把引用打进包。
+
 **粉红材质 / 丢脚本字段**  
 Shader 和 MonoBehaviour 依赖原工程脚本。有 DLL 可放进工程 `Assets/Plugins`；没有则只能用 AssetRipper 的占位脚本。
 

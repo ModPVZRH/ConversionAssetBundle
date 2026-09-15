@@ -93,6 +93,25 @@ def overlay_editor_scripts(template_dir: Path, unity_project: Path) -> None:
         shutil.copy2(cs_file, dst_editor / cs_file.name)
 
 
+def overlay_spine_stubs(template_dir: Path, unity_project: Path) -> None:
+    stub_dir = template_dir / "Assets" / "SpineStubs"
+    assets = unity_project / "Assets"
+    if not stub_dir.is_dir() or not assets.is_dir():
+        return
+    replaced = 0
+    for stub in sorted(stub_dir.iterdir()):
+        if not stub.is_file() or stub.suffix.lower() == ".meta":
+            continue
+        matches = [path for path in assets.rglob(stub.name) if path.is_file()]
+        if not matches:
+            print(f"warning: no ripped file named {stub.name} to overlay", file=sys.stderr)
+            continue
+        for dst in matches:
+            shutil.copyfile(stub, dst)
+            replaced += 1
+    print(f"overlaid {replaced} Spine stub files")
+
+
 def flatten_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
     items: list[dict[str, str]] = []
     bundles = mapping.get("bundles") or {}
@@ -201,6 +220,7 @@ def main() -> int:
         print(f"copied ripped Assets -> {ripped_dst}")
 
     overlay_editor_scripts(template_dir, unity_project)
+    overlay_spine_stubs(template_dir, unity_project)
     editor_dir = unity_project / "Assets" / "Editor"
     write_mapping_files(mapping_src, editor_dir)
 
