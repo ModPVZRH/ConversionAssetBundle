@@ -17,7 +17,8 @@ except ImportError:
 
 
 BUNDLE_EXTS = {"", ".ab", ".assetbundle", ".unity3d", ".bundle", ".assets"}
-SKIP_EXTS = {".json", ".txt", ".meta", ".xml", ".cs", ".py", ".md", ".zip", ".7z", ".exe", ".dll"}
+# 排除已转换的 Android 产物（后缀 .android），避免下次 inventory 把它们当成新源包重复转换
+SKIP_EXTS = {".json", ".txt", ".meta", ".xml", ".cs", ".py", ".md", ".zip", ".7z", ".exe", ".dll", ".android"}
 KNOWN_MAGICS = (b"UnityFS", b"UnityWeb", b"UnityRaw")
 KNOWN_MAGIC_STRS = {"UnityFS", "UnityWeb", "UnityRaw"}
 BUNDLE_FILE_EXTS = (".ab", ".assetbundle", ".unity3d", ".bundle", ".assets")
@@ -365,6 +366,8 @@ def inventory(input_dir: Path, out_dir: Path) -> int:
     for file_path in iter_files(input_dir):
         ext = file_path.suffix.lower()
         if ext == ".manifest":
+            if file_path.name.lower().endswith(".android.manifest"):
+                continue
             sibling = os.path.normcase(os.path.abspath(str(file_path)[: -len(".manifest")]))
             manifests[sibling] = parse_unity_manifest(file_path)
             continue
