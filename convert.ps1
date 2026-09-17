@@ -161,22 +161,89 @@ function Invoke-RipStage {
     if (-not (Test-Path -LiteralPath $InputDir)) {
         throw "Input directory not found: $InputDir"
     }
-    $ripArgs = @(
-        $RipAssetRipperPy,
-        "--ripper", $AssetRipper,
-        "--input", $InputDir,
-        "--output", $RippedDir
-    )
-    if ($RipperArgs.Count -gt 0) {
-        $ripArgs += "--"
-        $ripArgs += $RipperArgs
-    }
-    Invoke-Native -FilePath $Python -ArgumentList $ripArgs
 
-    $exportedAssets = Join-Path $RippedDir "ExportedProject\Assets"
-    $rootAssets = Join-Path $RippedDir "Assets"
-    if (-not (Test-Path -LiteralPath $exportedAssets) -and -not (Test-Path -LiteralPath $rootAssets)) {
-        throw "Ripped export has no Assets folder. Looked for '$exportedAssets' and '$rootAssets'."
+    $ripInputRoot = Join-Path $WorkDir "rip-input"
+
+    # 隔离转换：按 mapping.json 里的 bundle 清单逐个 rip 到 work/ripped/<bundle>/，
+    # 避免同名资源在合并目录里被 AssetRipper 重命名（_0/_1）导致覆盖。
+    $bundles = $null
+    if (Test-Path -LiteralPath $MappingPath) {
+        $mapping = Get-Content -LiteralPath $MappingPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $bundles = $mapping.bundles
+    }
+
+    if ($null -ne $bundles -and @($bundles.PSObject.Properties).Count -gt 0) {
+        if (Test-Path -LiteralPath $RippedDir) {
+            Remove-Item -LiteralPath $RippedDir -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $ripInputRoot) {
+            Remove-Item -LiteralPath $ripInputRoot -Recurse -Force
+        }
+        $ripCount = 0
+        foreach ($prop in @($bundles.PSObject.Properties)) {
+            $bundleName = [string]$prop.Name
+            $rel = [string]$prop.Value.file
+            if ([string]::IsNullOrEmpty($rel)) {
+                Write-Warning "Bundle '$bundleName' has no file path in mapping; skipping rip."
+                continue
+            }
+            $relWin = $rel -replace '/', '\'
+            $srcFile = Join-Path $InputDir $relWin
+            if (-not (Test-Path -LiteralPath $srcFile)) {
+                Write-Warning "Bundle source not found: $srcFile"
+                continue
+            }
+            $tmpDir = Join-Path $ripInputRoot $bundleName
+            New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+            Copy-Item -LiteralPath $srcFile -Destination $tmpDir -Force
+            $srcManifest = "$srcFile.manifest"
+            if (Test-Path -LiteralPath $srcManifest) {
+                Copy-Item -LiteralPath $srcManifest -Destination $tmpDir -Force
+            }
+            $outDir = Join-Path $RippedDir $bundleName
+            $ripArgs = @(
+                $RipAssetRipperPy,
+                "--ripper", $AssetRipper,
+                "--input", $tmpDir,
+                "--output", $outDir
+            )
+            if ($RipperArgs.Count -gt 0) {
+                $ripArgs += "--"
+                $ripArgs += $RipperArgs
+            }
+            Write-Host "RIP bundle '$bundleName'"
+            Invoke-Native -FilePath $Python -ArgumentList $ripArgs
+            $ripCount++
+        }
+        if (Test-Path -LiteralPath $ripInputRoot) {
+            Remove-Item -LiteralPath $ripInputRoot -Recurse -Force
+        }
+        Write-Host "Ripped $ripCount bundle(s) in isolation."
+        if ($ripCount -eq 0) {
+            throw "No bundles were ripped."
+        }
+    } else {
+        Write-Warning "mapping.json not found or has no bundles; ripping the whole input directory as a single project."
+        $ripArgs = @(
+            $RipAssetRipperPy,
+            "--ripper", $AssetRipper,
+            "--input", $InputDir,
+            "--output", $RippedDir
+        )
+        if ($RipperArgs.Count -gt 0) {
+            $ripArgs += "--"
+            $ripArgs += $RipperArgs
+        }
+        Invoke-Native -FilePath $Python -ArgumentList $ripArgs
+    }
+
+    $hasAssets = $false
+    if (Test-Path -LiteralPath $RippedDir) {
+        $assetDirs = @(Get-ChildItem -LiteralPath $RippedDir -Recurse -Directory -Filter "Assets" -ErrorAction SilentlyContinue)
+        $hasAssets = $assetDirs.Count -gt 0
+    }
+    if (-not $hasAssets) {
+        throw "Ripped export has no Assets folder under '$RippedDir'."
     }
 }
 

@@ -166,6 +166,11 @@ public static class AbRebuild
 
     static string ResolveAssetPath(AbFlatItem item, AssetIndex index)
     {
+        // 0) 隔离转换：先在当前 bundle 自己的 Assets/Bundles/<bundle>/ 目录内精确匹配
+        string scoped = FindInBundle(item, index);
+        if (!string.IsNullOrEmpty(scoped))
+            return scoped;
+
         string mappingPath = (item.path ?? "").Replace('\\', '/');
 
         // 1) exact project path as written in mapping
@@ -180,6 +185,44 @@ public static class AbRebuild
 
         // 3) filename without extension + type/extension heuristic
         return FindNameTypePath(item, index);
+    }
+
+    static string FindInBundle(AbFlatItem item, AssetIndex index)
+    {
+        string bundle = item.bundle;
+        if (string.IsNullOrEmpty(bundle))
+            return null;
+
+        string name = item.name;
+        if (string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(item.path))
+            name = Path.GetFileNameWithoutExtension(item.path.Replace('\\', '/'));
+        if (string.IsNullOrEmpty(name))
+            return null;
+
+        var candidates = new List<string>();
+        for (int i = 0; i < index.paths.Count; i++)
+        {
+            string path = index.paths[i];
+            string folder = BundleFolderOf(path);
+            if (folder == null || !folder.Equals(bundle, StringComparison.OrdinalIgnoreCase))
+                continue;
+            string file = Path.GetFileNameWithoutExtension(path.Replace('\\', '/'));
+            if (file.Equals(name, StringComparison.OrdinalIgnoreCase))
+                candidates.Add(path);
+        }
+
+        if (candidates.Count == 0)
+            return null;
+
+        var typed = new List<string>();
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            if (TypeMatches(candidates[i], item.type))
+                typed.Add(candidates[i]);
+        }
+
+        List<string> pool = typed.Count > 0 ? typed : candidates;
+        return PickBest(pool, item.path, "bundle");
     }
 
     static string FindExactPath(string mappingPath, AssetIndex index)
@@ -465,6 +508,19 @@ public static class AbRebuild
         return path.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase);
     }
 
+    static string BundleFolderOf(string assetPath)
+    {
+        string p = (assetPath ?? "").Replace('\\', '/');
+        int idx = p.IndexOf("/Bundles/", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+            return null;
+        string rest = p.Substring(idx + "/Bundles/".Length);
+        int slash = rest.IndexOf('/');
+        if (slash < 0)
+            return null;
+        return rest.Substring(0, slash);
+    }
+
     static AbFlatMapping LoadFlatMapping(string mappingArg)
     {
         var candidates = new List<string>();
@@ -592,8 +648,12 @@ public static class AbRebuild
                 && !kv.Key.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
                 continue;
             string stem = SpineStem(kv.Key);
-            if (!string.IsNullOrEmpty(stem) && !stemToBundle.ContainsKey(stem))
-                stemToBundle[stem] = kv.Value;
+            if (string.IsNullOrEmpty(stem))
+                continue;
+            string folder = BundleFolderOf(kv.Key) ?? "";
+            string key = folder + "/" + stem;
+            if (!stemToBundle.ContainsKey(key))
+                stemToBundle[key] = kv.Value;
         }
 
         if (stemToBundle.Count == 0)
@@ -604,7 +664,10 @@ public static class AbRebuild
             string path = index.paths[i];
             string stem = SpineStem(path);
             string bundle;
-            if (string.IsNullOrEmpty(stem) || !stemToBundle.TryGetValue(stem, out bundle))
+            if (string.IsNullOrEmpty(stem))
+                continue;
+            string folder = BundleFolderOf(path) ?? "";
+            if (!stemToBundle.TryGetValue(folder + "/" + stem, out bundle))
                 continue;
             if (LooksLikeSpineAsset(path)
                 || Path.GetFileNameWithoutExtension(path).StartsWith(stem, StringComparison.OrdinalIgnoreCase))

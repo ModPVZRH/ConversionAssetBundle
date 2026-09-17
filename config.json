@@ -1,10 +1,10 @@
 {
-  "unityEditor": "D:/Program Files/Unity/Hub/Editor/2022.3.62f3c1/Editor/Unity.exe",
-  "unityVersion": "2022.3.62f3c1",
+  "unityEditor": "D:/Program Files/Unity/Hub/Editor/2022.3.20f1c1/Editor/Unity.exe",
+  "unityVersion": "2022.3.20f1c1",
   "assetRipper": "./tools/AssetRipper/AssetRipper.GUI.Free.exe",
   "assetRipperArgs": [],
   "python": "python",
-  "inputDir": "E:/Work/PVZRH/CustomizeLib/BepInEx/UltimateHypnoMagnet.BepInEx",
+  "inputDir": "E:/Work/PVZRH/MuRong",
   "workDir": "./work",
   "outputDir": "./output/android",
   "unityTemplateDir": "./unity-template",

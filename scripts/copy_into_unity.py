@@ -50,6 +50,32 @@ def ignore_copy(_directory: str, contents: list[str]) -> list[str]:
     return [name for name in contents if name.lower() in IGNORE_DIR_NAMES]
 
 
+def ignore_copy_no_scripts(_directory: str, contents: list[str]) -> list[str]:
+    return [name for name in contents if name.lower() in IGNORE_DIR_NAMES or name == "Scripts"]
+
+
+def merge_scripts(src_assets: Path, dst_scripts: Path) -> None:
+    """Merge a bundle's Scripts/ (MonoScript stubs + asmdef) into a shared Assets/Scripts.
+
+    AssetRipper emits identical stub scripts/asmdefs for every bundle (e.g. UnityEngine.UI,
+    Unity.2D.Animation.Runtime). Copying one per bundle would collide on assembly names, so
+    they are deduplicated into a single shared folder (first bundle wins; contents are
+    identical across bundles).
+    """
+    src_scripts = src_assets / "Scripts"
+    if not src_scripts.is_dir():
+        return
+    for src_file in src_scripts.rglob("*"):
+        if not src_file.is_file():
+            continue
+        rel = src_file.relative_to(src_scripts)
+        dst_file = dst_scripts / rel
+        if dst_file.exists():
+            continue
+        dst_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_file, dst_file)
+
+
 def rmtree(path: Path) -> None:
     if not path.exists():
         return
@@ -80,6 +106,25 @@ def find_ripped_assets(ripped_root: Path) -> Path | None:
     if direct.is_dir():
         return direct
     return None
+
+
+def find_bundle_assets(ripped_root: Path) -> dict[str, Path]:
+    """Map bundle name -> ripped Assets dir.
+
+    New per-bundle layout (isolated conversion): work/ripped/<bundle>/.../Assets.
+    Old single-tree layout: work/ripped/.../Assets (returned under the empty key).
+    """
+    result: dict[str, Path] = {}
+    single = find_ripped_assets(ripped_root)
+    if single is not None:
+        result[""] = single
+        return result
+    if ripped_root.is_dir():
+        for child in sorted(p for p in ripped_root.iterdir() if p.is_dir()):
+            assets = find_ripped_assets(child)
+            if assets is not None:
+                result[child.name] = assets
+    return result
 
 
 def overlay_editor_scripts(template_dir: Path, unity_project: Path) -> None:
@@ -195,8 +240,8 @@ def main() -> int:
         return 1
 
     ripped_root = work_dir / "ripped"
-    ripped_assets = find_ripped_assets(ripped_root)
-    if ripped_assets is None:
+    bundle_assets = find_bundle_assets(ripped_root)
+    if not bundle_assets:
         print(
             "ripped Assets not found. Expected "
             f"{ripped_root / 'ExportedProject' / 'Assets'} or {ripped_root / 'Assets'}",
@@ -207,16 +252,36 @@ def main() -> int:
     unity_project = work_dir / "unity-project"
     mapping_src = work_dir / "inventory" / "mapping.json"
 
+    first_assets = next(iter(bundle_assets.values()))
+
     if mode == "ripped":
-        copy_root = ripped_assets.parent
+        copy_root = first_assets.parent
         print(f"mode=ripped copy {copy_root} -> {unity_project}")
         copytree_replace(copy_root, unity_project)
+        # 隔离转换：清空基础项目的 Assets，只按 bundle 目录重建，避免同名资源互相覆盖
+        rmtree(unity_project / "Assets")
+        (unity_project / "Assets").mkdir(parents=True, exist_ok=True)
     else:
         print(f"mode=template copy {template_dir} -> {unity_project}")
         copytree_replace(template_dir, unity_project)
+        rmtree(unity_project / "Assets" / "Ripped")
+
+    per_bundle = {name: assets for name, assets in bundle_assets.items() if name}
+    if per_bundle:
+        bundles_root = unity_project / "Assets" / "Bundles"
+        rmtree(bundles_root)
+        bundles_root.mkdir(parents=True, exist_ok=True)
+        scripts_root = unity_project / "Assets" / "Scripts"
+        rmtree(scripts_root)
+        for bundle_name, assets_dir in sorted(per_bundle.items()):
+            dst = bundles_root / bundle_name
+            shutil.copytree(assets_dir, dst, ignore=ignore_copy_no_scripts)
+            merge_scripts(assets_dir, scripts_root)
+            print(f"copied bundle '{bundle_name}' Assets -> Assets/Bundles/{bundle_name}")
+    elif mode != "ripped":
         ripped_dst = unity_project / "Assets" / "Ripped"
         rmtree(ripped_dst)
-        shutil.copytree(ripped_assets, ripped_dst, ignore=ignore_copy)
+        shutil.copytree(first_assets, ripped_dst, ignore=ignore_copy)
         print(f"copied ripped Assets -> {ripped_dst}")
 
     overlay_editor_scripts(template_dir, unity_project)

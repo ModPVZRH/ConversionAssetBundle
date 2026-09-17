@@ -77,7 +77,7 @@ python scripts/config_tui.py
 | 阶段 | 做什么 |
 |---|---|
 | `inventory` | 扫描 `input/`，写出 `work/inventory/mapping.json`（包名、资源、依赖、Unity 版本） |
-| `rip` | 启动 AssetRipper 无界面 Web API，`LoadFolder` + `Export/UnityProject`，结果在 `work/ripped/` |
+| `rip` | 启动 AssetRipper 无界面 Web API，`LoadFolder` + `Export/UnityProject`。按 bundle 逐个隔离 rip，结果在 `work/ripped/<bundle>/` |
 | `import` | 把还原工程灌进 `work/unity-project`，写入 Editor 脚本和分包名 |
 | `build` | Unity `-batchmode` 打 Android AB 到 `output/android/`（临时），再按 mapping 记录的来源路径，把结果放回原 AB 所在目录，文件名加 `.android` 后缀 |
 
@@ -96,7 +96,7 @@ python scripts/config_tui.py
 | `python` | Python 可执行文件，默认 `python` |
 | `inputDir` | PC AB 目录 |
 | `outputDir` | Android AB 输出目录 |
-| `unityProjectMode` | `ripped`：直接用 AssetRipper 导出工程打包（默认）；`template`：先复制 `unity-template/`，资源进 `Assets/Ripped/` |
+| `unityProjectMode` | `ripped`：直接用 AssetRipper 导出工程打包（默认）；`template`：先复制 `unity-template/`。两者都会按 bundle 隔离转换，资源进 `Assets/Bundles/<bundle>/` |
 | `androidTexture` | `ASTC`（推荐）/ `ETC2` / `DXT` |
 | `astcBlockSize` | 仅 ASTC 有效：`4x4` `5x5` `6x6` `8x8` `10x10` `12x12`。数字越大体积越小、画质越差。无法识别时按 `8x8` |
 | `maxTextureSize` | Android 贴图最长边上限。`0` 表示不限制 |
